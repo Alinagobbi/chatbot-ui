@@ -9,58 +9,35 @@ import { ChatCompletionCreateParamsBase } from "openai/resources/chat/completion
 export const runtime: ServerRuntime = "edge"
 
 export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages, customModelId } = json as {
-    chatSettings: ChatSettings
-    messages: any[]
-    customModelId: string
-  }
+   const json = await request.json();
+  const { messages } = json;
 
   try {
-    const supabaseAdmin = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    const response = await fetch('https://https://alinagobbi.app.n8n.cloud/webhook/0002d066-e5ac-49f7-a8de-fc29048c1bf7/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ messages }),
+    });
 
-    const { data: customModel, error } = await supabaseAdmin
-      .from("models")
-      .select("*")
-      .eq("id", customModelId)
-      .single()
+    const data = await response.json();
 
-    if (!customModel) {
-      throw new Error(error.message)
-    }
+    // Assumes n8n returns: { reply: "Hello!" }
+    const reply = data.reply || "Sorry, something went wrong.";
 
-    const custom = new OpenAI({
-      apiKey: customModel.api_key || "",
-      baseURL: customModel.base_url
-    })
-
-    const response = await custom.chat.completions.create({
-      model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-      messages: messages as ChatCompletionCreateParamsBase["messages"],
-      temperature: chatSettings.temperature,
-      stream: true
-    })
-
-    const stream = OpenAIStream(response)
-
-    return new StreamingTextResponse(stream)
+    return new Response(
+      JSON.stringify({ message: reply }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   } catch (error: any) {
-    let errorMessage = error.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-
-    if (errorMessage.toLowerCase().includes("api key not found")) {
-      errorMessage =
-        "Custom API Key not found. Please set it in your profile settings."
-    } else if (errorMessage.toLowerCase().includes("incorrect api key")) {
-      errorMessage =
-        "Custom API Key is incorrect. Please fix it in your profile settings."
-    }
-
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    console.error("n8n request failed", error);
+    return new Response(
+      JSON.stringify({ message: "Failed to reach AI agent." }),
+      { status: 500 }
+    );
   }
 }
